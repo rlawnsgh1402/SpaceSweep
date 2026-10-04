@@ -1,0 +1,6 @@
+# 빌드 결과물 (./build.sh로 다시 만들 수 있음)
+build/
+*.dmg
+
+# macOS
+.DS_Store
