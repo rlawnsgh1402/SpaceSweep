@@ -49,3 +49,9 @@ Xcode(또는 Command Line Tools)가 설치된 Apple Silicon Mac에서:
 | `Sources/UI.swift` | 공간 정리·앱 제거 화면, 사이드바 |
 | `Tools/make_icon.swift` | 앱 아이콘 그리기 |
 | `build.sh` | 빌드·서명·DMG 생성 |
+
+## 라이선스 / License
+
+[MIT](LICENSE). 이 앱은 파일을 삭제하는 프로그램입니다. 정리 전에 항목을 확인하고, 중요한 데이터는 백업해 두세요. 사용으로 생긴 데이터 손실에 대해 작성자는 책임지지 않습니다.
+
+This app deletes files. Review items before cleaning and keep backups of important data. The software is provided "as is", without warranty of any kind.
