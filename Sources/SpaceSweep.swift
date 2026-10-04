@@ -12,7 +12,7 @@ func groupTitle(_ key: String) -> String {
     switch key {
     case "앱 캐시": return L(key, "App Caches")
     case "개발 도구 캐시": return L(key, "Developer Tool Caches")
-    case "시스템": return L(key, "System")
+    case "시스템 데이터": return L(key, "System Data")
     case "Claude 앱 데이터": return L(key, "Claude App Data")
     default: return key
     }
@@ -49,6 +49,8 @@ enum CleanAction {
     case reveal(URL)
     /// 체크박스 대신 버튼으로 실행하고 다시 검사
     case button(String, String, [String])
+    /// 다른 앱(관리 프로그램)을 열어 주기만 함
+    case openApp(String, URL)
 }
 
 struct CleanItem: Identifiable {
@@ -203,12 +205,14 @@ enum Scanner {
                                    action: .removePaths(smallCaches), size: smallTotal, selected: true))
         }
         if appleTotal >= minSize {
-            items.append(CleanItem(group: "앱 캐시", title: L("macOS 시스템 캐시 \(appleCaches.count)개", "\(appleCaches.count) macOS system caches"),
+            items.append(CleanItem(group: "시스템 데이터", title: L("macOS 시스템 캐시 \(appleCaches.count)개", "\(appleCaches.count) macOS system caches"),
                                    detail: L("Apple 앱·서비스의 캐시. 대부분 다시 만들어지지만 필요할 때만 정리하세요.", "Caches of Apple apps and services. Most are recreated, but clean them only if needed."),
                                    safety: .caution, action: .removePaths(appleCaches), size: appleTotal, selected: false))
         }
 
-        add("앱 캐시", L("사용자 로그", "User logs"), L("앱 로그 파일. 문제 진단용이며 지워도 됩니다.", "App log files used for troubleshooting. Safe to delete."), .safe, h("Library/Logs"), contents: true)
+        add("시스템 데이터", L("사용자 로그·진단 보고서", "User logs & diagnostic reports"),
+            L("앱 로그와 충돌 보고서. 문제 진단용이며 지워도 됩니다.", "App logs and crash reports used for troubleshooting. Safe to delete."),
+            .safe, h("Library/Logs"), contents: true)
         add("개발 도구 캐시", L("npm 캐시", "npm cache"), L("npm 패키지 다운로드 캐시", "Downloaded npm packages"), .safe, h(".npm/_cacache"))
         add("개발 도구 캐시", "~/.cache", L("pip, huggingface 등 여러 도구의 캐시", "Caches from pip, Hugging Face and other tools"), .caution, h(".cache"),
             selected: false, contents: true)
@@ -266,19 +270,50 @@ enum Scanner {
             }
         }
 
-        // 3. 시스템
+        // 3. 시스템 데이터: 앱과 상관없이 macOS가 쌓아 두는 것들
+        for (dir, name) in [("Library/iTunes/iPhone Software Updates", "iPhone"), ("Library/iTunes/iPad Software Updates", "iPad")] {
+            add("시스템 데이터", L("\(name) 소프트웨어 업데이트 파일", "\(name) software update files"),
+                L("기기 업데이트·복원용으로 받아 둔 .ipsw 파일. 필요하면 다시 받습니다.", "Downloaded .ipsw files for updating or restoring devices. They're downloaded again when needed."),
+                .safe, h(dir), contents: true)
+        }
         progress(L("Time Machine 로컬 스냅샷 확인", "Checking Time Machine local snapshots"))
         let (_, snaps) = run("/usr/bin/tmutil", ["listlocalsnapshots", "/"])
         let snapCount = snaps.components(separatedBy: "\n").filter { $0.contains("com.apple") }.count
         if snapCount > 0 {
-            items.append(CleanItem(group: "시스템", title: L("Time Machine 로컬 스냅샷 \(snapCount)개", "\(snapCount) Time Machine local snapshots"),
+            items.append(CleanItem(group: "시스템 데이터", title: L("Time Machine 로컬 스냅샷 \(snapCount)개", "\(snapCount) Time Machine local snapshots"),
                                    detail: L("macOS가 보관 중인 로컬 백업. 외장 백업이 있다면 지워도 됩니다.", "Local backups kept by macOS. Safe to delete if you have an external backup."),
                                    safety: .caution,
                                    action: .command("/usr/bin/tmutil", ["thinlocalsnapshots", "/", "999999999999", "4"]),
                                    size: 0, selected: false))
         }
-        add("시스템", L("iPhone/iPad 백업", "iPhone/iPad backups"), L("Finder로 만든 기기 백업. iCloud 백업이 있는지 먼저 확인하세요.", "Device backups made with Finder. Make sure you have an iCloud backup first."), .caution,
+        add("시스템 데이터", L("iPhone/iPad 백업", "iPhone/iPad backups"), L("Finder로 만든 기기 백업. iCloud 백업이 있는지 먼저 확인하세요.", "Device backups made with Finder. Make sure you have an iCloud backup first."), .caution,
             h("Library/Application Support/MobileSync/Backup"), selected: false, contents: true)
+        // 관리자 영역(/Library/Application Support)의 큰 데이터 — 설치한 앱에서 지우도록 안내만
+        let shared = URL(fileURLWithPath: "/Library/Application Support")
+        for d in children(shared) where isDir(d) {
+            progress(L("공용 앱 데이터: \(d.lastPathComponent)", "Shared app data: \(d.lastPathComponent)"))
+            let s = size(of: d)
+            guard s >= 1_000_000_000 else { continue }
+            let name = d.lastPathComponent
+            let manager = URL(fileURLWithPath: "/Applications/Steinberg Library Manager.app")
+            let isSteinberg = name == "Steinberg" && exists(manager)
+            items.append(CleanItem(
+                group: "시스템 데이터",
+                title: isSteinberg ? L("Steinberg 사운드 라이브러리", "Steinberg sound libraries")
+                                   : L("\(name) 공용 데이터", "\(name) shared data"),
+                detail: isSteinberg
+                    ? L("Cubase 등 Steinberg 음악 프로그램의 악기·사운드 데이터. 안 쓰는 라이브러리는 Steinberg Library Manager에서 지우세요.",
+                        "Instrument and sound content for Cubase and other Steinberg apps. Remove libraries you don't use in Steinberg Library Manager.")
+                    : L("모든 사용자가 함께 쓰는 앱 데이터(/Library). 관리자 권한이 필요해 설치한 앱에서 지우는 게 안전합니다.",
+                        "App data shared by all users (/Library). Deleting needs admin rights, so remove it from the app that installed it."),
+                safety: .manual,
+                action: isSteinberg ? .openApp(L("Library Manager 열기", "Open Library Manager"), manager) : .reveal(d),
+                revealOverride: d, size: s, selected: false))
+        }
+        // 지울 수는 없지만 시스템 데이터를 차지하는 것 — 안내만
+        add("시스템 데이터", L("가상 메모리 (스왑)", "Virtual Memory (Swap)"),
+            L("메모리가 부족할 때 쓰는 공간. 직접 지우지 말고 Mac을 재시동하면 줄어듭니다.", "Used when memory runs low. Don't delete it — restarting your Mac shrinks it."),
+            .manual, URL(fileURLWithPath: "/private/var/vm"), reveal: true)
 
         // 4. 대용량 앱 데이터: 하위 항목별로 보여주고 기본은 선택 안 함
         scanColima(&items, progress)
@@ -586,6 +621,7 @@ final class Store: ObservableObject {
                 // 그룹 순서는 유지하고, 그룹 안에서만 큰 순서로 정렬
                 var order: [String] = []
                 for i in result where !order.contains(i.group) { order.append(i.group) }
+                if let k = order.firstIndex(of: "시스템 데이터") { order.insert(order.remove(at: k), at: 0) }
                 self.items = result.sorted {
                     let a = order.firstIndex(of: $0.group)!, b = order.firstIndex(of: $1.group)!
                     return a != b ? a < b : $0.size > $1.size
@@ -652,7 +688,7 @@ final class Store: ObservableObject {
                         freed += item.size
                     }
                     msg = code == 0 && left.isEmpty ? "✓ \(item.title)" : "✗ \(item.title)"
-                case .reveal, .button:
+                case .reveal, .button, .openApp:
                     continue
                 }
                 await MainActor.run { self.log.append(msg) }

@@ -38,7 +38,7 @@ struct GroupInfo {
         case "앱 캐시": return .init(icon: "tray.full", blurb: L("앱이 임시로 저장한 파일. 지워도 필요하면 자동으로 다시 생깁니다.", "Temporary files saved by apps. Recreated automatically when needed."))
         case "개발 도구 캐시": return .init(icon: "terminal", blurb: L("npm·pip·Gradle 등이 내려받아 둔 파일.", "Files downloaded by npm, pip, Gradle and others."))
         case "Xcode": return .init(icon: "hammer", blurb: L("빌드 결과물과 iPhone 시뮬레이터.", "Build products and iPhone simulators."))
-        case "시스템": return .init(icon: "gearshape", blurb: L("Time Machine 로컬 스냅샷과 기기 백업.", "Time Machine local snapshots and device backups."))
+        case "시스템 데이터": return .init(icon: "internaldrive", blurb: L("macOS·관리자 영역 데이터. 아래 Xcode·앱 캐시 등도 macOS에서는 시스템 데이터로 집계됩니다.", "macOS and admin-area data. The groups below (Xcode, app caches…) also count as System Data in macOS."))
         case "Colima (Docker)": return .init(icon: "shippingbox", blurb: L("Docker 가상머신. 컨테이너 데이터가 들어 있습니다.", "Docker virtual machine. Contains your container data."))
         case "LM Studio", "Ollama": return .init(icon: "cpu", blurb: L("내려받은 AI 모델. 다시 쓰려면 새로 받아야 합니다.", "Downloaded AI models. You'd need to download them again to use them."))
         case "Claude 앱 데이터": return .init(icon: "bubble.left.and.text.bubble.right", blurb: L("Claude 데스크톱 앱 데이터. 앱을 종료한 뒤 정리하세요.", "Claude desktop app data. Quit the app before cleaning."))
@@ -334,7 +334,14 @@ struct CleanerView: View {
                         .font(.caption).foregroundStyle(picked.isEmpty ? .secondary : Color.accentColor).lineLimit(1)
                 }
                 Spacer()
-                Text(fmt(store.groupSize(g))).font(.title3.weight(.semibold)).monospacedDigit()
+                let manualSize = members.filter { !$0.checkable }.reduce(0) { $0 + $1.size }
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(fmt(store.groupSize(g))).font(.title3.weight(.semibold)).monospacedDigit()
+                    if manualSize > 0 {
+                        Text(L("+ 직접 관리 \(fmt(manualSize))", "+ \(fmt(manualSize)) to manage yourself"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Image(systemName: "chevron.right").foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isOpen ? 90 : 0))
             }
@@ -376,6 +383,9 @@ struct CleanerView: View {
                 }
                 Text(i.detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                if case .openApp(let label, let app) = i.action {
+                    Button(label) { NSWorkspace.shared.open(app) }.padding(.top, 4)
+                }
                 if case .button(let label, _, _) = i.action {
                     Button(label) { store.runButton(i) }.disabled(store.busy).padding(.top, 4)
                 }
